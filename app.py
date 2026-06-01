@@ -3,6 +3,7 @@ import os
 import uuid
 import time
 from pymongo import MongoClient
+import certifi
 
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
