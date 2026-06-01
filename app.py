@@ -2,12 +2,18 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import os
 import uuid
 import time
+
+# 🔒 New Security Imports
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# 🗄️ Database Imports
 from pymongo import MongoClient
 import certifi
 
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
+# Your custom encryption/OTP modules
 from crypto import aes128, aes256, chacha20
 from otp import sha256_otp, hmac_otp, totp
 
@@ -28,7 +34,8 @@ if not MONGO_URI:
     print("WARNING: MONGO_URI environment variable is not set!")
 
 try:
-    client = MongoClient(MONGO_URI)
+    # Use certifi to prevent SSL handshake errors on Render
+    client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
     db = client.get_database("secure_cloud_vault")
     
     # Collections
@@ -113,12 +120,15 @@ def register():
         if users_col.find_one({"username": username}):
             flash("Username already exists!", "error")
         else:
+            # 🔒 Hash the password before saving it to the database
+            hashed_password = generate_password_hash(password)
+
             # Insert new user into MongoDB
             users_col.insert_one({
                 "username": username,
                 "name": name,
                 "email": email,
-                "password": password
+                "password": hashed_password # Save the hash, NOT the raw password
             })
             flash("Account created successfully!", "success")
             return redirect(url_for('login'))
@@ -138,7 +148,8 @@ def login():
         # Fetch user from MongoDB
         user = users_col.find_one({"username": username})
 
-        if user and user['password'] == password:
+        # 🔒 Check if user exists AND if the input password matches the stored hash
+        if user and check_password_hash(user['password'], password):
             session['user'] = username
             return redirect(url_for('dashboard'))
         else:
@@ -161,7 +172,7 @@ def dashboard():
     my_files_cursor = files_col.find({"owner": current_user})
     my_files = {f["file_id"]: f for f in my_files_cursor}
 
-    # Fetch files shared with the current user (where shared_with.username exists)
+    # Fetch files shared with the current user
     shared_files_cursor = files_col.find({f"shared_with.{current_user}": {"$exists": True}})
     shared_files = {f["file_id"]: f for f in shared_files_cursor}
 
@@ -216,7 +227,7 @@ def upload_file():
             'owner': session['user'],
             'filename': uploaded_file.filename,
             'algo': algorithm,
-            'key': key, # PyMongo automatically handles bytes conversion for BSON
+            'key': key, 
             'shared_with': {}
         })
 
@@ -362,7 +373,7 @@ def verify_otp(file_id):
 
 @app.route('/admin/users')
 def admin_view_users():
-    # Fetch all users but hide their passwords
+    # Fetch all users but hide their hashed passwords from the API output
     all_users = users_col.find({}, {"_id": 0, "password": 0})
     
     user_dict = {}
