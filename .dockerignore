@@ -1,0 +1,12 @@
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+*.log
+storage/decrypted_files/
+storage/encrypted_files/
+test_data/
+results/
